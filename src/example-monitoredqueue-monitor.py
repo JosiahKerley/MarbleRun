@@ -7,6 +7,7 @@ from marblerun import Monitor
 
 
 mon = Monitor()
+mon.verbose = True
 while True:
 	os.system("clear")
 	print("Starting...")

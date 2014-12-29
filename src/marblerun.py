@@ -1,16 +1,23 @@
+import os
 import json
 import uuid
 import time
 import redis
+import base64
 import socket
+import platform
+import multiprocessing
 
+
+## Facilitates communitcation on the bus.
 class Communicator:
 	bustype	= "redis"
 	server	= "localhost"
 	port	= 6379
 	channel	= 0
-	ttl		= 60
-	ttl		= 5
+	ttl		= 15
+	verbose	= False
+
 	
 	def __init__(self):
 		if self.bustype == "redis":
@@ -65,7 +72,7 @@ class Communicator:
 
 
 
-
+## Provides assured execution and failure handling
 class Monitor:
 	comm	= Communicator()
 	id		= "0"
@@ -73,6 +80,7 @@ class Monitor:
 	private	= "_private"
 	lock	= "_lock"
 	ttl		= comm.ttl
+	verbose	= False
 
 
 	## Init
@@ -88,15 +96,21 @@ class Monitor:
 		if private	== None: private	= self.private
 		if lock		== None: lock		= self.lock
 		try:
-			message	=	{
-							"id":self.id,"node":socket.gethostname(),
-							"public":public,
-							"private":private,
-							"lock":lock,
-							"timestamp":int(time.time())
-						}
-			self.comm.push(self.queue,json.dumps(message))
-			return(self.comm.transfer(public,private))
+			data = self.comm.transfer(public,private)
+			if data == None:
+				if self.verbose: print("\t[M] No work in queue '%s'"%(public))
+				return(False)
+			else:
+				if self.verbose: print("\t[M] Found '%s' in queue '%s'"%(data,public))
+				message	=	{
+								"id":self.id,"node":socket.gethostname(),
+								"public":public,
+								"private":private,
+								"lock":lock,
+								"timestamp":int(time.time())
+							}
+				self.comm.push(self.queue,json.dumps(message))
+				return(data)
 		except:
 			return(False)
 
@@ -111,11 +125,14 @@ class Monitor:
 
 	## Heartbeat
 	def heartbeat(self,lock=None):
+		if self.verbose: print("\t[M] Sending heartbeat")
 		if lock == None: lock = self.lock
 		try:
 			self.comm.set(lock,True,self.ttl)
+			if self.verbose: print("\t\t[M] Heartbeat success")
 			return(True)
 		except:
+			if self.verbose: print("\t\t[M] Heartbeat failed")
 			return(False)
 
 
@@ -123,18 +140,152 @@ class Monitor:
 	def monitorQueue(self):
 		message = self.comm.pop(self.queue)
 		if not message == None:
+			if self.verbose: print("\t[M] Message from worker received")
 			message = json.loads(message)
-			print json.dumps(message,indent=2)
+			if self.verbose: print("\t\t[M] Message details:")
+			if self.verbose: print(json.dumps(message,indent=2)+"\n\n\n")
 			c = 0
 			while self.comm.get(message["lock"]):
-				print("Locked for %ss"%(str(c)))
+				if self.verbose: print("\t[M] Locked for %ss"%(str(c)))
 				c += 1
 				time.sleep(1)
 			if self.comm.dump(message["private"]):
-				print("Looks like it died, adding it back to the original queue...")
+				if self.verbose: print("\t[M] Looks like it died, adding it back to the original queue...")
 				self.comm.push(message["public"],self.comm.pop(message["private"]))
 			else:
-				print("Looks good!")
+				if self.verbose: print("\t[M] Job completed on its own volition")
+		else:
+			if self.verbose: print("\t[M] No messages from workers found")
+
+
+## Gathers and reports information about nodes
+class Informant:
+	comm			= Communicator()
+	id				= "0"
+	nodemodel		= "%s_nodemodel"%(id)
+	reportqueue		= "%s_reportedinfo"%(id)
+	verbose			= False
+	nodemodel		= {}
+	clustermodel	= {}
+
+
+	def __init__(self):
+		self.nodemodel = self.gatherSystemInfo()
+
+
+	def gatherSystemInfo(self):
+		model	=	{
+						"hostname"	:	False,
+						"ip"		:	False,
+						"kernel"	:	False,
+						"os"		:	False,
+						"family"	:	False,
+						"version"	:	False,
+						"virtual"	:	False,
+						"arch"		:	False,
+					}
+		model["hostname"]		= socket.gethostname()
+		model["ip"]				= socket.gethostbyname(socket.gethostname())
+		model["arch"]			= os.environ["PROCESSOR_ARCHITECTURE"]
+		if os.name == 'nt':
+			model["kernel"]		= ['nt']
+			model["os"]			= ['windows']
+			model["family"]		= ['nt']
+			model["version"]	= platform.win32_ver()
+		return(model)
+
+
+	def reportModel(self):
+		self.comm.push(self.reportqueue,json.dumps(self.model))
+
+
+	def compileNodeModel(self):
+		model = {}
+		reportednodes = self.comm.dump(self.reportqueue,True)
+		for nodejson in reportednodes:
+			node = json.loads(nodejson)
+			model[node["hostname"]] = node
+		self.clustermodel = model
+		return(model)
+
+
+	def postNodeModel(self):
+		self.comm.set(self.clustermodel,json.dumps(self.clustermodel))
+
+
+	def getNodeModel(self):
+		return(json.loads(self.comm.get(self.clustermodel)))
+
+
+
+class Agent:
+	comm	= Communicator()
+	info	= Informant()
+	verbose	= False
+	maxpids	= multiprocessing.cpu_count() - 1
+	pool	= None
+
+
+	def rallyWorkers_(self):
+		self.pool = multiprocessing.Pool(self.maxpids)
+		self.pool.map(f, range(self.maxpids))
+
+
+	def doWork(self):
+		mon	= Monitor()
+		job = mon.checkout(socket.gethostname())
+		if job:
+			job = json.loads(job)
+			with open(job["script"]["filename"],"w") as f:
+				f.write(base64.b64decode(job["script"]["contents"]))
+			proc = multiprocessing.Process(target=self.workerSpace, args=(job["script"]["executor"],job["script"]["filename"],job["script"]["arguments"],))
+			proc.start()
+			while proc.is_alive():
+				mon.heartbeat()
+				time.sleep(1)
+			mon.finish()
+
+	def workerSpace(self,executor,filename,arguments=None):
+		cmd = '"%s" "%s" "%s"'%(executor,filename,arguments)
+		cmd = '%s %s %s'%(executor,filename,arguments)
+		print cmd
+		try:
+			os.system(cmd)
+			return(True)
+		except:
+			return(False)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#if self.verbose: print("\t\t[] ")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
