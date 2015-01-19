@@ -1,7 +1,0 @@
-setup.py
-marblerun/__init__.py
-marblerun.egg-info/PKG-INFO
-marblerun.egg-info/SOURCES.txt
-marblerun.egg-info/dependency_links.txt
-marblerun.egg-info/not-zip-safe
-marblerun.egg-info/top_level.txt
