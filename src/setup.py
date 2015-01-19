@@ -8,5 +8,4 @@ setup(name='marblerun',
       author_email='josiahkerley@gmail.com',
       license='MIT',
       packages=['marblerun'],
-      zip_safe=False
-	  install_requires=['redis'],)
+      zip_safe=False,)
