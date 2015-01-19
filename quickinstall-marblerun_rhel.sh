@@ -13,6 +13,7 @@ mkdir -p /opt/MarbleRun/conf.d
 mkdir -p /opt/MarbleRun/examples
 mkdir -p /etc/marblerun
 ln -s /opt/MarbleRun/conf.d /etc/marblerun/
+echo '{"path": "/opt/MarbleRun/daemons/mrmond.py","dir": "/tmp","instances": "<[cores]>-1"}' > /etc/marblerun/conf.d/01-monitor.json
 cp daemons/* /opt/MarbleRun/daemons/
 cp examples/* /opt/MarbleRun/examples/
 chmod +x /opt/MarbleRun/daemons/*
