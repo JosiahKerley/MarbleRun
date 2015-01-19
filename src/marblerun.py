@@ -13,6 +13,10 @@ import multiprocessing
 from threading import Thread
 
 
+## Globals
+version "0.0.1"
+
+
 ## Facilitates communitcation on the bus.
 class Communicator:
 	bustype		= "redis"
