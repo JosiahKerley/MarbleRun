@@ -14,7 +14,7 @@ from threading import Thread
 
 
 ## Globals
-version "0.0.1"
+version = "0.1"
 
 
 ## Facilitates communitcation on the bus.
