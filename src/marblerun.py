@@ -1,3 +1,6 @@
+#!/usr/bin/python
+
+## Import Classes
 import os
 import json
 import uuid
@@ -7,21 +10,24 @@ import base64
 import socket
 import platform
 import multiprocessing
+from threading import Thread
 
 
 ## Facilitates communitcation on the bus.
 class Communicator:
-	bustype	= "redis"
-	server	= "localhost"
-	port	= 6379
-	channel	= 0
-	ttl		= 15
-	verbose	= False
+	bustype		= "redis"
+	server		= "localhost"
+	password	= None
+	port		= 6379
+	channel		= 0
+	ttl			= 1
+	verbose		= False
 
 	
 	def __init__(self):
 		if self.bustype == "redis":
-			self.bus = redis.StrictRedis(host = self.server, port = self.port, db = self.channel)
+			self.bus = redis.StrictRedis(host = self.server, port = self.port, db = self.channel, password = self.password)
+
 
 	def push(self,queue,data,reverse=False):
 		if self.bustype == "redis":
@@ -40,6 +46,7 @@ class Communicator:
 	def transfer(self,output,input):
 		if self.bustype == "redis":
 			return(self.bus.rpoplpush(output,input))
+
 
 	def dump(self,queue,pop=False):
 		if self.bustype == "redis":
@@ -68,6 +75,76 @@ class Communicator:
 		if self.bustype == "redis":
 			if ttl: self.bus.expire(key,ttl)
 			return(self.bus.get(key))
+
+	def show(self,pattern):
+		if self.bustype == "redis":
+			return(self.bus.keys(pattern))
+
+
+## Sends marbles to higher runs
+class Elevator:
+
+	## Instances
+	comm = Communicator()
+
+	## Options
+	upstream = None
+	bustype = comm.bustype
+	server = comm.server
+	password = comm.password
+	port = comm.port
+	channel = comm.channel
+	verbose = False
+	pendqueue = "elevate_"
+
+
+
+	## Init
+	def __init__(self):
+		self.upstream = Communicator()
+		self.upstream.bustype = self.bustype
+		self.upstream.server = self.server
+		self.upstream.password = self.password
+		self.upstream.port = self.port
+		self.upstream.channel = self.channel
+		self.upstream.__init__()
+
+
+	## Picks up
+	def lift(self,queue,data):
+		elevqueue = "%s%s"%(self.pendqueue,queue)
+		return(self.comm.push(elevqueue,data))
+
+
+	## Lists pending marbles
+	def pending(self):
+		if self.verbose: print("\t[I] Checking for pending marbles...")
+		query = "%s*"%(self.pendqueue)
+		return(self.comm.show(query))
+
+
+	## Elevates	pending marbles
+	def send(self):
+		self.__init__()
+		pending = self.pending()
+		if not pending == None:
+			for queue in pending:
+				dataset = self.comm.dump(queue,True)
+				try:
+					if self.verbose: print("\t[I] Sending data to upstream server...")
+					for data in dataset:
+						self.upstream.push(queue.replace(self.pendqueue,''),data)
+				except:
+					if self.verbose: print("\t[E] Cannot communicate with upstream server!  Returning values to original queue")
+					for data in dataset:
+						self.comm.push(queue,data)
+
+
+	## Elevator Daemon
+	def daemon(self):
+		while True:
+			self.send()
+			time.sleep(1)
 
 
 
@@ -138,13 +215,15 @@ class Monitor:
 
 	## Process monitored queue
 	def monitorQueue(self):
-		message = self.comm.pop(self.queue)
+		message = self.comm.pop(self.queue,True)
 		if not message == None:
 			if self.verbose: print("\t[M] Message from worker received")
 			message = json.loads(message)
 			if self.verbose: print("\t\t[M] Message details:")
 			if self.verbose: print(json.dumps(message,indent=2)+"\n\n\n")
 			c = 0
+			self.comm.set(message["lock"],True,self.ttl)
+			#self.comm.set(message["lock"],True,1)
 			while self.comm.get(message["lock"]):
 				if self.verbose: print("\t[M] Locked for %ss"%(str(c)))
 				c += 1
@@ -158,141 +237,109 @@ class Monitor:
 			if self.verbose: print("\t[M] No messages from workers found")
 
 
-## Gathers and reports information about nodes
-class Informant:
-	comm			= Communicator()
-	id				= "0"
-	nodemodel		= "%s_nodemodel"%(id)
-	reportqueue		= "%s_reportedinfo"%(id)
-	verbose			= False
-	nodemodel		= {}
-	clustermodel	= {}
-
-
-	def __init__(self):
-		self.nodemodel = self.gatherSystemInfo()
-
-
-	def gatherSystemInfo(self):
-		model	=	{
-						"hostname"	:	False,
-						"ip"		:	False,
-						"kernel"	:	False,
-						"os"		:	False,
-						"family"	:	False,
-						"version"	:	False,
-						"virtual"	:	False,
-						"arch"		:	False,
-					}
-		model["hostname"]		= socket.gethostname()
-		model["ip"]				= socket.gethostbyname(socket.gethostname())
-		model["arch"]			= os.environ["PROCESSOR_ARCHITECTURE"]
-		if os.name == 'nt':
-			model["kernel"]		= ['nt']
-			model["os"]			= ['windows']
-			model["family"]		= ['nt']
-			model["version"]	= platform.win32_ver()
-		return(model)
-
-
-	def reportModel(self):
-		self.comm.push(self.reportqueue,json.dumps(self.model))
-
-
-	def compileNodeModel(self):
-		model = {}
-		reportednodes = self.comm.dump(self.reportqueue,True)
-		for nodejson in reportednodes:
-			node = json.loads(nodejson)
-			model[node["hostname"]] = node
-		self.clustermodel = model
-		return(model)
-
-
-	def postNodeModel(self):
-		self.comm.set(self.clustermodel,json.dumps(self.clustermodel))
-
-
-	def getNodeModel(self):
-		return(json.loads(self.comm.get(self.clustermodel)))
+	## Monitor Daemon
+	def daemon(self):
+		while True:
+			self.monitorQueue()
+			time.sleep(0.1)
 
 
 
-class Agent:
-	comm	= Communicator()
-	info	= Informant()
+
+
+
+## The in-script handler
+class Marble:
+
+	## Instances
+	comm = Communicator()
+	mon = Monitor()
+	elev = Elevator()
+
+
+	## Options
+	monitored = True
+	fail_after = 60
+	wait_poll = 0.1
 	verbose	= False
-	maxpids	= multiprocessing.cpu_count() - 1
-	pool	= None
 
 
-	def rallyWorkers_(self):
-		self.pool = multiprocessing.Pool(self.maxpids)
-		self.pool.map(f, range(self.maxpids))
+	## Heartbeat
+	hbpid = None
+	hbstate = False
 
 
-	def doWork(self):
-		mon	= Monitor()
-		job = mon.checkout(socket.gethostname())
-		if job:
-			job = json.loads(job)
-			with open(job["script"]["filename"],"w") as f:
-				f.write(base64.b64decode(job["script"]["contents"]))
-			proc = multiprocessing.Process(target=self.workerSpace, args=(job["script"]["executor"],job["script"]["filename"],job["script"]["arguments"],))
-			proc.start()
-			while proc.is_alive():
-				mon.heartbeat()
-				time.sleep(1)
-			mon.finish()
-
-	def workerSpace(self,executor,filename,arguments=None):
-		cmd = '"%s" "%s" "%s"'%(executor,filename,arguments)
-		cmd = '%s %s %s'%(executor,filename,arguments)
-		print cmd
+	## Sets up connection
+	def connect(self,bustype=None,server=None,port=None,password=None,channel=None):
 		try:
-			os.system(cmd)
+			if bustype == None: bustype = self.comm.bustype
+			if server == None: server = self.comm.server
+			if port == None: port = self.comm.port
+			if password == None: password = self.comm.password
+			if channel == None: channel = self.comm.channel
+			self.comm.bustype = bustype
+			self.comm.server = server
+			self.comm.port = port
+			self.comm.password = password
+			self.comm.channel = channel
+			self.comm.__init__()
 			return(True)
 		except:
 			return(False)
 
 
+	## Checks for data
+	def check(self,queue):
+		if self.monitored:
+			data = self.mon.checkout(queue)
+		else:
+			data = self.comm.pop(queue)
+		return(data)
 
 
+	## Waits for data
+	def wait(self,queue):
+		hbstate = False
+		data = self.check(queue)
+		while data == None or data == False:
+			time.sleep(self.wait_poll)
+			if self.verbose: print("\t[I] Nothing in queue %s, waiting %s seconds..."%(queue,self.wait_poll))
+			data = self.check(queue)
+		if self.monitored:
+			hbstate = True
+			self.hbpid = Thread(target=self.heartbeat)
+			self.hbpid.start()
+		return(data)
 
 
+	## Keeps job alive in the monitor
+	def heartbeat(self):
+		while self.hbstate:
+			self.mon.heartbeat()
+			time.sleep(self.comm.ttl / 4)
 
 
+	## Tells the monitor the job is finished
+	def finish(self):
+		self.hbstate = False
+		self.mon.finish()
 
 
+	## Sends data to a queue
+	def send(self,queue,data):
+		self.comm.push(queue,data)
+		if self.verbose: print("\t[I] Sending data to queue %s"%(queue))
 
 
+	## Sends data to a queue
+	def expedite(self,queue,data):
+		self.comm.push(queue,data,True)
+		if self.verbose: print("\t[I] Sending data to front of queue %s"%(queue))
 
 
-#if self.verbose: print("\t\t[] ")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+	def elevate(self,queue,data):
+		self.elev.lift(queue,data)
+		if self.verbose: print("\t[I] Sending data to an upstream queue %s"%(queue))
 
 
 
