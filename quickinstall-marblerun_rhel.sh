@@ -11,6 +11,8 @@ pip install redis
 mkdir -p /opt/MarbleRun/daemons
 mkdir -p /opt/MarbleRun/conf.d
 mkdir -p /opt/MarbleRun/examples
+mkdir -p /etc/marblerun
+ln -s /opt/MarbleRun/conf.d /etc/marblerun/
 cp daemons/* /opt/MarbleRun/daemons/
 cp examples/* /opt/MarbleRun/examples/
 chmod +x /opt/MarbleRun/daemons/*
