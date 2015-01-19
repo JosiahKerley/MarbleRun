@@ -17,8 +17,9 @@ Although MR is not meant to be a service itself, but rather a toolkit for batch 
 
 #### Example Jobs
 
+##### Monitored job
 Here is a basic job the pulls data in from a queue, processes it, and routes it to other queues:
-```
+```python
 from marblerun import Marble
 marble = Marble()
 
@@ -33,5 +34,49 @@ while True:
 		marble.expedite("test-monitored","This data is at the front of the queue!")
 	marble.finish()
 ```
+This example is a monitored run; it waits for data via the *wait* function, when data is available, it processes it, sends data to a another queue via the *elevate* function, adds data to a queue via the *send* function, and adds data to a queue for immediate processing via the *expidite* function.  Finally, it informs the monitor that execution was succesfull by issuing the *finish* function.
+
+##### Unmonitored job
+This example does the same as above, however, does not utilize a monitor.  This means that if the process crashes or hangs, there is no way for the system to know that the data needs to be re-added into it's original queue.
+
+```python
+marble = Marble()
+marble.monitored = False
+
+## Process data
+while True:
+	data = marble.wait("test-unmonitored")
+	print data
+```
+
+##### Monitored job that will make the Monitors think it failed
+Finally, this example demonstrates a job that will cause Monitors to think it failed by not issuing a *finish* when complete.
+
+```python
+from marblerun import Marble
+marble = Marble()
+
+## Process data
+while True:
+	data = marble.wait("test-monitored")
+	print data
+	if data == "Test Data: 3":
+		marble.send("test-monitored","This data is at the back of the queue!")
+		marble.expedite("test-monitored","This data is at the front of the queue!")
+	#marble.finish()
+```
+
 
 #### Architecture
+
+
+
+
+
+
+
+
+
+
+
+
