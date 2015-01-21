@@ -98,6 +98,8 @@ class Informant:
 	instancename = os.path.basename(sys.argv[0])
 	instancestart = time.time()
 	instanceclass = None
+	message = None
+	lastmessage = None
 
 
 	## Sets status
@@ -106,9 +108,18 @@ class Informant:
 		return(True)
 
 
+	## Sets status message
+	def message(self,message):
+		if not self.lastmessage == self.message: self.lastmessage = self.message
+		self.message = message
+		return(True)
+
+
 	## Updates status
 	def updateStatus(self):
 		message = {
+					"message":self.message,
+					"lastmessage":self.lastmessage,
 					"class":self.instanceclass,
 					"id":self.instanceid,
 					"host":self.instancehost,
@@ -270,6 +281,7 @@ class Monitor:
 			self.comm.set(message["lock"],True,self.ttl)
 			#self.comm.set(message["lock"],True,1)
 			while self.comm.get(message["lock"]):
+				self.info.message = "Monitoring %s"%(message["lock"])
 				self.info.updateStatus()
 				if self.verbose: print("\t[M] Locked for %ss"%(str(c)))
 				c += 1
@@ -280,11 +292,15 @@ class Monitor:
 			else:
 				if self.verbose: print("\t[M] Job completed on its own volition")
 		else:
+			self.info.message = "Waiting"
+			self.info.updateStatus()
 			if self.verbose: print("\t[M] No messages from workers found")
 
 
 	## Monitor Daemon
 	def daemon(self):
+		self.info.message = "Started"
+		self.info.updateStatus()
 		while True:
 			self.monitorQueue()
 			time.sleep(0.1)
@@ -359,6 +375,8 @@ class Marble:
 		data = self.check(queue)
 		self.info.updateStatus()
 		while data == None or data == False:
+			self.info.message = "Waiting"
+			self.info.updateStatus()
 			time.sleep(self.wait_poll)
 			if self.verbose: print("\t[I] Nothing in queue %s, waiting %s seconds..."%(queue,self.wait_poll))
 			data = self.check(queue)
@@ -395,11 +413,16 @@ class Marble:
 		if self.verbose: print("\t[I] Sending data to front of queue %s"%(queue))
 
 
+	## Elevate a marble
 	def elevate(self,queue,data):
 		self.elev.lift(queue,data)
 		if self.verbose: print("\t[I] Sending data to an upstream queue %s"%(queue))
 
 
+	## Reports message
+	def report(self,message):
+		self.info.message = message
+		self.info.updateStatus()
 
 
 
@@ -407,12 +430,17 @@ class Marble:
 ## CLI Tools
 class CLI:
 	comm = Communicator()
-	def table(data)
-	row_format ="{:>15}" * (len(teams_list) + 1)
-		print row_format.format("", *teams_list)
-		for team, row in zip(teams_list, data):
-			print row_format.format(team, *row)
 
+
+	## Display as table
+	def table(data):
+		row_format ="{:>15}" * (len(teams_list) + 1)
+			print row_format.format("", *teams_list)
+			for team, row in zip(teams_list, data):
+				print row_format.format(team, *row)
+
+
+	## Gets status
 	def status(self):
 		nodes = self.comm.show('status_*')
 		display = ""
