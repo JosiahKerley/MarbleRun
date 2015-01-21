@@ -2,6 +2,7 @@
 
 ## Import Classes
 import os
+import sys
 import json
 import uuid
 import time
@@ -33,12 +34,14 @@ class Communicator:
 			self.bus = redis.StrictRedis(host = self.server, port = self.port, db = self.channel, password = self.password)
 
 
-	def push(self,queue,data,reverse=False):
+	def push(self,queue,data,reverse=False,ttl=False):
 		if self.bustype == "redis":
 			if reverse:
-				return(self.bus.rpush(queue,data))
+				retval = self.bus.rpush(queue,data)
 			else:
-				return(self.bus.lpush(queue,data))
+				retval = self.bus.lpush(queue,data)
+			if ttl: self.bus.expire(queue,ttl)
+			return(retval)
 
 	def pop(self,queue,reverse=False):
 		if self.bustype == "redis":
@@ -85,11 +88,44 @@ class Communicator:
 			return(self.bus.keys(pattern))
 
 
+## Gives information
+class Informant:
+
+	## Info Model
+	comm = Communicator()
+	instanceid = str(uuid.uuid4())
+	instancehost = socket.gethostname()
+	instancename = os.path.basename(sys.argv[0])
+	instancestart = time.time()
+	instanceclass = None
+
+
+	## Sets status
+	def status(self,message):
+		self.comm.set("status_%s"%(self.instanceid),message,60)
+		return(True)
+
+
+	## Updates status
+	def updateStatus(self):
+		message = {
+					"class":self.instanceclass,
+					"id":self.instanceid,
+					"host":self.instancehost,
+					"name":self.instancename,
+					"starttime":self.instancestart,
+					"timestamp":time.time()
+		}
+		return(self.status(json.dumps(message,indent=2)))
+
+
 ## Sends marbles to higher runs
 class Elevator:
-
+	
 	## Instances
 	comm = Communicator()
+	info = Informant()
+	info.instanceclass = "elevator"
 
 	## Options
 	upstream = None
@@ -155,13 +191,17 @@ class Elevator:
 
 ## Provides assured execution and failure handling
 class Monitor:
-	comm	= Communicator()
-	id		= "0"
-	queue	= "monitor"
-	private	= "_private"
-	lock	= "_lock"
-	ttl		= comm.ttl
-	verbose	= False
+
+	## State
+	comm = Communicator()
+	info = Informant()
+	info.instanceclass = "monitor"
+	id = "0"
+	queue = "monitor"
+	private = "_private"
+	lock = "_lock"
+	ttl = comm.ttl
+	verbose = False
 
 
 	## Init
@@ -219,6 +259,7 @@ class Monitor:
 
 	## Process monitored queue
 	def monitorQueue(self):
+		self.info.updateStatus()
 		message = self.comm.pop(self.queue,True)
 		if not message == None:
 			if self.verbose: print("\t[M] Message from worker received")
@@ -229,6 +270,7 @@ class Monitor:
 			self.comm.set(message["lock"],True,self.ttl)
 			#self.comm.set(message["lock"],True,1)
 			while self.comm.get(message["lock"]):
+				self.info.updateStatus()
 				if self.verbose: print("\t[M] Locked for %ss"%(str(c)))
 				c += 1
 				time.sleep(1)
@@ -256,9 +298,11 @@ class Monitor:
 class Marble:
 
 	## Instances
-	comm = Communicator()
 	mon = Monitor()
 	elev = Elevator()
+	info = Informant()
+	comm = Communicator()
+	info.instanceclass = "marble"
 
 
 	## Options
@@ -271,6 +315,14 @@ class Marble:
 	## Heartbeat
 	hbpid = None
 	hbstate = False
+
+
+	## Init
+	def __init__(self):
+		self.instancename = os.path.basename(__file__)
+		self.instanceid = str(uuid.uuid4())
+		self.instancehost = socket.gethostname()
+		self.instancestart = time.time()
 
 
 	## Sets up connection
@@ -305,10 +357,12 @@ class Marble:
 	def wait(self,queue):
 		hbstate = False
 		data = self.check(queue)
+		self.info.updateStatus()
 		while data == None or data == False:
 			time.sleep(self.wait_poll)
 			if self.verbose: print("\t[I] Nothing in queue %s, waiting %s seconds..."%(queue,self.wait_poll))
 			data = self.check(queue)
+			self.info.updateStatus()
 		if self.monitored:
 			hbstate = True
 			self.hbpid = Thread(target=self.heartbeat)
@@ -350,9 +404,27 @@ class Marble:
 
 
 
+## CLI Tools
+class CLI:
+	comm = Communicator()
+	def table(data)
+	row_format ="{:>15}" * (len(teams_list) + 1)
+		print row_format.format("", *teams_list)
+		for team, row in zip(teams_list, data):
+			print row_format.format(team, *row)
 
-
-
+	def status(self):
+		nodes = self.comm.show('status_*')
+		display = ""
+		for node in nodes:
+			data = json.loads(self.comm.get(node))
+			sync = time.time() - data['timestamp']
+			node = data['host']
+			uptime = data['timestamp'] - data['starttime']
+			mrclass = data['class']
+			line = '%s: %s %s %s\n'%(node,sync,mrclass,uptime)
+			display += line
+		print display
 
 
 
