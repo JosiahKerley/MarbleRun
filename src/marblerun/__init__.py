@@ -9,8 +9,11 @@ import time
 import redis
 import base64
 import socket
+import difflib
 import platform
 import multiprocessing
+
+## Subclasses
 from threading import Thread
 
 
@@ -432,27 +435,185 @@ class CLI:
 	comm = Communicator()
 
 
-	## Display as table
-	def table(data):
-		row_format ="{:>15}" * (len(teams_list) + 1)
-			print row_format.format("", *teams_list)
-			for team, row in zip(teams_list, data):
-				print row_format.format(team, *row)
+	## Init
+	def __init__(self):
+		display = self.comm.get("cli_option_display")
+		if display == None:
+			display = "table"
+		
 
 
 	## Gets status
 	def status(self):
+		print "\n"
+		print " +-----------------+---------+----------------+---------+---------+"
+		print " |    Hostname     |  Role   | Name           | Sync    | Uptime  |"
+		print " +=================+=========+================+=========+=========+"
 		nodes = self.comm.show('status_*')
-		display = ""
 		for node in nodes:
 			data = json.loads(self.comm.get(node))
-			sync = time.time() - data['timestamp']
-			node = data['host']
-			uptime = data['timestamp'] - data['starttime']
-			mrclass = data['class']
-			line = '%s: %s %s %s\n'%(node,sync,mrclass,uptime)
-			display += line
-		print display
+			sync = str(self.cleanTime(time.time() - data['timestamp']))
+			node = (data['host'])[:15]
+			uptime = str(self.cleanTime(data['timestamp'] - data['starttime']))
+			mrclass = (data['class'])[:7]
+			name = (data['name'])[:14]
+			message = (data['message'])[:14]
+			print " |                 |         |                |         |         |"
+			print " | %s| %s | %s| %s| %s|"%(node.ljust(16),mrclass.ljust(6),name.ljust(15),sync.ljust(8),uptime.ljust(8))
+		print " |                 |         |                |         |         |"
+		print " +=================+=========+================+=========+=========+"
+
+
+	## Cleany display time
+	def cleanTime(self,seconds):
+		m, s = divmod(seconds, 60)
+		h, m = divmod(m, 60)
+		time = "%d:%02d:%02d"%(h, m, s)
+		return(time)
+
+
+	## Help
+	def help(self,key=None):
+		if key == None:
+			text = 'This is help text.\nIt is the default one.'
+		if key == 'show':
+			text = 'This is help text.\nIt is the "show" one.'
+		print(text)
+
+
+	## Error
+	def error(self, text, level=1):
+		print "\t[E] %s"%(text)
+
+
+	## The 'show' verb
+	def show(self,subject=False, action=False, option=False):
+		subjects = ["running","startup","starting"]
+		c = False
+		if subject:
+			sub = False
+			try: sub = difflib.get_close_matches(subject, subjects)[0]
+			except: pass
+			if sub:
+				if sub == 'running':
+					self.status()
+				elif sub == 'startup':
+					pass
+				elif sub == 'starting':
+					pass
+			else:
+				self.error("Unknown subject '%s'"%(subject))
+			c+=1
+		if not c:
+			self.help('show')
+
+
+	## Parse arguments
+	def parseArgs(self,arglist):
+		params = []
+		args = arglist[1:]
+		i = 0
+		quoted = False
+		selection = ''
+		while i < len(args):
+			if "'" in args[i] or '"' in args[i]:
+					quoted = not quoted
+			if not quoted:
+				selection += args[i]
+			params.append(selection)
+			selection = ''
+			i+=1
+		return(params)
+
+
+	## Process arguments
+	def args(self,arglist):
+
+		## Get params
+		params = self.parseArgs(arglist)
+		verb = False
+		subject = False
+		action = False
+		options = False
+
+		## Pick out command args
+		try:
+			verb = params[0]
+			try:
+				subject = params[1]
+				try:
+					action = params[2]
+					try:
+						options = params[3]
+					except: pass
+				except: pass
+			except: pass
+		except: pass
+		
+
+		## Act on libre
+		if verb:
+			if verb.lower() == "show":
+				self.show(subject,action,options)
+		else:
+			self.help()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
