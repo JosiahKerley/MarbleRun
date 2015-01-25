@@ -533,8 +533,8 @@ class CLI:
 			cursor = {}
 			data = self.comm.get(node)
 			cursor['node'] = data['host']
-			cursor['sync'] = str(time.time() - data['timestamp'])
-			cursor['uptime'] = str(data['timestamp'] - data['starttime'])
+			cursor['sync'] = str(round(time.time() - data['timestamp'],2))
+			cursor['uptime'] = str(self.cleanTime(data['timestamp'] - data['starttime']))
 			cursor['class'] = data['class']
 			cursor['name'] = data['name']
 			cursor['id'] = data['id']
