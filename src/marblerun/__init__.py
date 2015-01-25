@@ -258,7 +258,7 @@ class Monitor:
 		if lock		== None: lock		= self.lock
 		try:
 			data = self.comm.transfer(public,private)
-			if data == None:
+			if data == None or data == False:
 				if self.verbose: print("\t[M] No work in queue '%s'"%(public))
 				return(False)
 			else:
