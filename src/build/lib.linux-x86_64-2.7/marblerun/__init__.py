@@ -68,7 +68,7 @@ class Communicator:
 			if reverse:
 				return(self.deserialize(self.bus.rpop(queue)))
 			else:
-				return(self.deserialize(self.bus.lpop(queue)))
+				return(self.bus.lpop(queue))
 
 	def transfer(self,output,input):
 		if self.bustype == "redis":
