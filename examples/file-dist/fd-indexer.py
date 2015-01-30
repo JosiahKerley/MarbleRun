@@ -1,6 +1,7 @@
 #!/usr/bin/python
 import os
 import time
+import json
 import uuid
 import socket
 from marblerun import Marble
@@ -12,15 +13,7 @@ comm = Communicator()
 
 
 ## Settings
-config = {
-			"group":"default",
-			"path":"sync",
-			"timeout":120,
-			"freq":1,
-			"ignore":[".cache"],
-			"port":5147
-}
-config['group'] = 'fd_'+config['group']
+with open('fd-conf.json','r') as f: config = json.loads(f.read())
 
 
 ## Return tree list
@@ -53,5 +46,7 @@ while True:
 		changes = {"add":add,"remove":remove}
 		marble.send('fd_%s_%s_changes'%(config['group'],socket.gethostname()),changes)
 	last = current
-	comm.set('fd_member_%s'%(str(id)),socket.gethostname(),config['timeout'])
+	try: members = list(set([socket.gethostname()] + comm.get('fd_members_'+config['group'])))
+	except: members = [socket.gethostname()]
+	comm.set('fd_members_'+config['group'],members,config['timeout'])
 	time.sleep(config['freq'])

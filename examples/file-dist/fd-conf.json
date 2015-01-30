@@ -1,0 +1,10 @@
+{
+  "group": "default", 
+  "ignore": [
+    ".cache"
+  ], 
+  "timeout": 120, 
+  "path": "sync", 
+  "freq": 1, 
+  "port": 5147
+}
