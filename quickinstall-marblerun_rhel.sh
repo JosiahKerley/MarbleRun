@@ -4,7 +4,7 @@ url=https://github.com/JosiahKerley/MarbleRun
 cd /tmp
 git clone $url
 cd MarbleRun
-yum install -y redis
+yum install -y redis python-redis
 chkconfig redis on
 service redis restart
 pip install redis
@@ -25,4 +25,5 @@ cd src
 python setup.py install
 cd /tmp
 rm -rf MarbleRun
-
+iptable -A INPUT -p tcp -m tcp --dport 6379 -j ACCEPT
+service iptables save
