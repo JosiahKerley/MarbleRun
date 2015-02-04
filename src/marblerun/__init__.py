@@ -379,6 +379,13 @@ class Marble:
 			if password == None: password = self.comm.password
 			if channel == None: channel = self.comm.channel
 
+			self.comm.bustype = bustype
+			self.comm.server = server
+			self.comm.port = port
+			self.comm.password = password
+			self.comm.channel = channel
+			self.comm.__init__()
+
 			self.info.comm.bustype = bustype
 			self.info.comm.server = server
 			self.info.comm.port = port
