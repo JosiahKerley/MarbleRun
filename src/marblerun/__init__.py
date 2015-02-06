@@ -417,23 +417,36 @@ class Marble:
 
 	## Waits for data
 	def wait(self,queue):
-		hbstate = False
-		data = self.check(queue)
-		self.info.updateStatus()
-		while data == None or data == False:
-			self.info.message = "waiting"
-			time.sleep(self.wait_poll)
-			if self.verbose: print("\t[I] Nothing in queue %s, waiting %s seconds..."%(queue,self.wait_poll))
-			data = self.check(queue)
+		hold = True
+		while hold:
+			#hold = False
+			hbstate = False
+			message = self.check(queue)
 			self.info.updateStatus()
-		self.info.message = "Executing job"
-		self.info.updateStatus()
-		self.info.opInc()
-		if self.monitored:
-			hbstate = True
-			self.hbpid = Thread(target=self.heartbeat)
-			self.hbpid.start()
-		return(data)
+			while message == None or message == False:
+				self.info.message = "waiting"
+				time.sleep(self.wait_poll)
+				if self.verbose: print("\t[I] Nothing in queue %s, waiting %s seconds..."%(queue,self.wait_poll))
+				message = self.check(queue)
+				self.info.updateStatus()
+			#with open("debug.txt","a") as f: f.write(json.dumps(message)+'\n')
+			id = message['id']
+			data = message['data']
+			if self.comm.get(id):
+				print "Skipping..."
+				hold = True
+				self.comm.push(queue,{"id":id,"data":data})
+			else:
+				hold = False
+				self.comm.set(id,id,1)
+				self.info.message = "Executing job"
+				self.info.updateStatus()
+				self.info.opInc()
+				if self.monitored:
+					hbstate = True
+					self.hbpid = Thread(target=self.heartbeat)
+					self.hbpid.start()
+				return(data)
 
 
 	## Keeps job alive in the monitor
@@ -450,14 +463,20 @@ class Marble:
 
 
 	## Sends data to a queue
-	def send(self,queue,data):
-		self.comm.push(queue,data)
+	def send(self,queue,data,id=False):
+		#time.sleep(1)
+		if not id:
+			id = str(uuid.uuid4())+'_lock'
+		self.comm.push(queue,{"id":id,"data":data})
 		if self.verbose: print("\t[I] Sending data to queue %s"%(queue))
 
 
 	## Sends data to a queue
-	def expedite(self,queue,data):
-		self.comm.push(queue,data,True)
+	def expedite(self,queue,data,id=False):
+		#time.sleep(1)
+		if not id:
+			id = str(uuid.uuid4())+'_lock'
+		self.comm.push(queue,{"id":id,"data":data},True)
 		if self.verbose: print("\t[I] Sending data to front of queue %s"%(queue))
 
 
